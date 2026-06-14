@@ -5,7 +5,13 @@ import {
 import { validatePdfImageUploadFiles } from "../../files/fileValidation.service.js";
 import { runPdfImageToExcelEngine } from "./documentEngineBridge.service.js";
 
+function getElapsedMs(startTime) {
+  return Math.round(performance.now() - startTime);
+}
+
 export async function extractPdfImageToExcel({ files = [], extractionMode }) {
+  const requestStartTime = performance.now();
+
   const validation = validatePdfImageUploadFiles(files);
 
   if (!validation.isValid) {
@@ -17,6 +23,8 @@ export async function extractPdfImageToExcel({ files = [], extractionMode }) {
   const jobId = createJobId();
   const uploadedFiles = [];
 
+  const uploadStartTime = performance.now();
+
   for (const file of files) {
     const uploadedFile = await uploadTempFileToStorage({
       jobId,
@@ -26,12 +34,19 @@ export async function extractPdfImageToExcel({ files = [], extractionMode }) {
     uploadedFiles.push(uploadedFile);
   }
 
+  const uploadMs = getElapsedMs(uploadStartTime);
+
   const selectedExtractionMode = extractionMode || "FAST_TABLE";
+
+  const engineStartTime = performance.now();
 
   const engineResult = await runPdfImageToExcelEngine({
     files,
     extractionMode: selectedExtractionMode,
   });
+
+  const engineMs = getElapsedMs(engineStartTime);
+  const totalMs = getElapsedMs(requestStartTime);
 
   return {
     success: true,
@@ -52,6 +67,12 @@ export async function extractPdfImageToExcel({ files = [], extractionMode }) {
       extractionStrategy: engineResult.extractionStrategy,
       confidence: engineResult.confidence,
       metadata: engineResult.metadata || {},
+      performance: engineResult.performance || {},
+    },
+    performance: {
+      uploadMs,
+      engineMs,
+      totalMs,
     },
     warnings: engineResult.warnings || [],
   };
