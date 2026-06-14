@@ -5,6 +5,35 @@ const engineCwd = process.env.DOCUMENT_ENGINE_CWD || "../document-engine";
 
 const timeoutMs = Number(process.env.DOCUMENT_ENGINE_TIMEOUT_MS || 30000);
 
+async function callDocumentEngineApi(payload) {
+  const documentEngineUrl = process.env.DOCUMENT_ENGINE_URL;
+
+  if (!documentEngineUrl) {
+    return null;
+  }
+
+  const response = await fetch(`${documentEngineUrl}/extract`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data) {
+    const error = new Error(
+      data?.message ||
+        `Document engine API failed with status ${response.status}`,
+    );
+    error.statusCode = response.status || 500;
+    throw error;
+  }
+
+  return data;
+}
+
 function parseDocumentEngineOutput(stdout) {
   const trimmedOutput = stdout.trim();
 
@@ -47,10 +76,25 @@ function createEnginePayload({ files, extractionMode }) {
   };
 }
 
-export function runPdfImageToExcelEngine({ files, extractionMode }) {
-  return new Promise((resolve, reject) => {
-    const payload = createEnginePayload({ files, extractionMode });
+export async function runPdfImageToExcelEngine({ files, extractionMode }) {
+  const payload = createEnginePayload({ files, extractionMode });
 
+  const apiResult = await callDocumentEngineApi(payload);
+
+  if (apiResult) {
+    if (!apiResult.success) {
+      const error = new Error(
+        apiResult.message || "Document engine API failed.",
+      );
+      error.statusCode = 422;
+      error.engineError = apiResult;
+      throw error;
+    }
+
+    return apiResult;
+  }
+
+  return new Promise((resolve, reject) => {
     const child = spawn(pythonPath, ["-m", "app.main"], {
       cwd: engineCwd,
       stdio: ["pipe", "pipe", "pipe"],
