@@ -51,6 +51,7 @@ export async function extractPdfImageToExcel({ files = [], extractionMode }) {
       version: engineResult.engineVersion,
       extractionStrategy: engineResult.extractionStrategy,
       confidence: engineResult.confidence,
+      metadata: engineResult.metadata || {},
     },
     warnings: engineResult.warnings || [],
   };
