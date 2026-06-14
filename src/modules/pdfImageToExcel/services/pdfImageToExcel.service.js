@@ -9,7 +9,11 @@ function getElapsedMs(startTime) {
   return Math.round(performance.now() - startTime);
 }
 
-export async function extractPdfImageToExcel({ files = [], extractionMode }) {
+export async function extractPdfImageToExcel({
+  files = [],
+  extractionMode,
+  jobIdOverride,
+}) {
   const requestStartTime = performance.now();
 
   const validation = validatePdfImageUploadFiles(files);
@@ -20,7 +24,7 @@ export async function extractPdfImageToExcel({ files = [], extractionMode }) {
     throw error;
   }
 
-  const jobId = createJobId();
+  const jobId = jobIdOverride || createJobId();
   const uploadedFiles = [];
 
   const uploadStartTime = performance.now();
