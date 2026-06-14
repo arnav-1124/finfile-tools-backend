@@ -1,4 +1,4 @@
-import { PDFDocument } from "pdf-lib";
+import { degrees, PDFDocument } from "pdf-lib";
 
 const MAX_MERGE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -165,6 +165,49 @@ export async function mergePdfFiles({ files = [] }) {
     metadata: {
       inputFiles,
       outputPages: outputPdf.getPageCount(),
+    },
+  };
+}
+
+export async function rotatePdfPages({ file, rotationDegrees }) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for rotate PDF.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const allowedRotations = [90, 180, 270];
+  const selectedRotation = Number(rotationDegrees);
+
+  if (!allowedRotations.includes(selectedRotation)) {
+    const error = new Error("Rotation must be 90, 180, or 270 degrees.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const sourcePdf = await PDFDocument.load(file.buffer);
+  const pages = sourcePdf.getPages();
+
+  for (const page of pages) {
+    const currentRotation = page.getRotation().angle || 0;
+    page.setRotation(degrees((currentRotation + selectedRotation) % 360));
+  }
+
+  const outputBytes = await sourcePdf.save();
+
+  return {
+    buffer: Buffer.from(outputBytes),
+    filename: `rotated-${Date.now()}.pdf`,
+    metadata: {
+      originalName: file.originalname,
+      rotationDegrees: selectedRotation,
+      outputPages: sourcePdf.getPageCount(),
     },
   };
 }
