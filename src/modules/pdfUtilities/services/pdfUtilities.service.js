@@ -1,5 +1,11 @@
 import { PDFDocument } from "pdf-lib";
 
+const MAX_MERGE_SIZE_BYTES = 15 * 1024 * 1024;
+
+function getTotalFileSize(files) {
+  return files.reduce((total, file) => total + file.size, 0);
+}
+
 function parsePageRanges(pageRanges, totalPages) {
   if (!pageRanges || typeof pageRanges !== "string") {
     const error = new Error("Page ranges are required. Example: 1-3,5,8");
@@ -118,6 +124,14 @@ export async function mergePdfFiles({ files = [] }) {
       error.statusCode = 400;
       throw error;
     }
+  }
+
+  const totalSize = getTotalFileSize(files);
+
+  if (totalSize > MAX_MERGE_SIZE_BYTES) {
+    const error = new Error("Merge PDF limit is 15 MB.");
+    error.statusCode = 400;
+    throw error;
   }
 
   const outputPdf = await PDFDocument.create();
