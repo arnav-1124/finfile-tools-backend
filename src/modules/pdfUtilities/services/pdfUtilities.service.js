@@ -1,6 +1,112 @@
 import { degrees, PDFDocument } from "pdf-lib";
+import sharp from "sharp";
 
 const MAX_MERGE_SIZE_BYTES = 15 * 1024 * 1024;
+
+const ALLOWED_ROTATIONS = new Set([-90, 90, 180, 270]);
+
+const ROTATABLE_IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+const WORD_MIME_TYPES = new Set([
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
+function normalizeRotationDegrees(rotationDegrees) {
+  const selectedRotation = Number(rotationDegrees);
+
+  if (!ALLOWED_ROTATIONS.has(selectedRotation)) {
+    const error = new Error("Rotation must be -90, 90, 180, or 270 degrees.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return selectedRotation === -90 ? 270 : selectedRotation;
+}
+
+function parseJsonField(value, fallbackValue) {
+  if (!value) return fallbackValue;
+
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function buildPdfRotationInstructions({
+  rotations,
+  pageRanges,
+  rotationDegrees,
+  totalPages,
+}) {
+  const parsedRotations = parseJsonField(rotations, null);
+
+  if (Array.isArray(parsedRotations) && parsedRotations.length > 0) {
+    const instructions = [];
+
+    for (const item of parsedRotations) {
+      const page = Number(item.page);
+      const rotation = normalizeRotationDegrees(item.degrees);
+
+      if (!Number.isInteger(page) || page < 1 || page > totalPages) {
+        const error = new Error(
+          `Invalid page number ${item.page}. This file has ${totalPages} pages.`,
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      instructions.push({
+        page,
+        degrees: rotation,
+      });
+    }
+
+    return instructions;
+  }
+
+  const selectedRotation = normalizeRotationDegrees(rotationDegrees);
+
+  const selectedPages = pageRanges
+    ? parsePageRanges(pageRanges, totalPages)
+    : Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  return selectedPages.map((page) => ({
+    page,
+    degrees: selectedRotation,
+  }));
+}
+
+function getImageOutputDetails(file) {
+  if (file.mimetype === "image/jpeg") {
+    return {
+      contentType: "image/jpeg",
+      extension: "jpg",
+      sharpFormat: "jpeg",
+    };
+  }
+
+  if (file.mimetype === "image/webp") {
+    return {
+      contentType: "image/webp",
+      extension: "webp",
+      sharpFormat: "webp",
+    };
+  }
+
+  return {
+    contentType: "image/png",
+    extension: "png",
+    sharpFormat: "png",
+  };
+}
 
 function getTotalFileSize(files) {
   return files.reduce((total, file) => total + file.size, 0);
@@ -169,34 +275,72 @@ export async function mergePdfFiles({ files = [] }) {
   };
 }
 
-export async function rotatePdfPages({ file, rotationDegrees }) {
+export async function rotateDocumentFile({
+  file,
+  rotationDegrees,
+  pageRanges,
+  rotations,
+}) {
   if (!file) {
-    const error = new Error("PDF file is required.");
+    const error = new Error("File is required.");
     error.statusCode = 400;
     throw error;
   }
 
-  if (file.mimetype !== "application/pdf") {
-    const error = new Error("Only PDF files are supported for rotate PDF.");
-    error.statusCode = 400;
+  if (file.mimetype === "application/pdf") {
+    return rotatePdfDocument({
+      file,
+      rotationDegrees,
+      pageRanges,
+      rotations,
+    });
+  }
+
+  if (ROTATABLE_IMAGE_MIME_TYPES.has(file.mimetype)) {
+    return rotateImageDocument({
+      file,
+      rotationDegrees,
+    });
+  }
+
+  if (WORD_MIME_TYPES.has(file.mimetype)) {
+    const error = new Error(
+      "Word document rotation will be supported after document-to-PDF conversion is added.",
+    );
+    error.statusCode = 501;
     throw error;
   }
 
-  const allowedRotations = [90, 180, 270];
-  const selectedRotation = Number(rotationDegrees);
+  const error = new Error(
+    "Unsupported file type. Upload a PDF, PNG, JPG, JPEG, or WebP file.",
+  );
+  error.statusCode = 400;
+  throw error;
+}
 
-  if (!allowedRotations.includes(selectedRotation)) {
-    const error = new Error("Rotation must be 90, 180, or 270 degrees.");
-    error.statusCode = 400;
-    throw error;
-  }
-
+async function rotatePdfDocument({
+  file,
+  rotationDegrees,
+  pageRanges,
+  rotations,
+}) {
   const sourcePdf = await PDFDocument.load(file.buffer);
+  const totalPages = sourcePdf.getPageCount();
+
+  const instructions = buildPdfRotationInstructions({
+    rotations,
+    pageRanges,
+    rotationDegrees,
+    totalPages,
+  });
+
   const pages = sourcePdf.getPages();
 
-  for (const page of pages) {
+  for (const instruction of instructions) {
+    const page = pages[instruction.page - 1];
     const currentRotation = page.getRotation().angle || 0;
-    page.setRotation(degrees((currentRotation + selectedRotation) % 360));
+
+    page.setRotation(degrees((currentRotation + instruction.degrees) % 360));
   }
 
   const outputBytes = await sourcePdf.save();
@@ -204,10 +348,33 @@ export async function rotatePdfPages({ file, rotationDegrees }) {
   return {
     buffer: Buffer.from(outputBytes),
     filename: `rotated-${Date.now()}.pdf`,
+    contentType: "application/pdf",
     metadata: {
       originalName: file.originalname,
+      sourceType: "pdf",
+      totalPages,
+      rotationsApplied: instructions,
+    },
+  };
+}
+
+async function rotateImageDocument({ file, rotationDegrees }) {
+  const selectedRotation = normalizeRotationDegrees(rotationDegrees);
+  const outputDetails = getImageOutputDetails(file);
+
+  const outputBuffer = await sharp(file.buffer)
+    .rotate(selectedRotation)
+    .toFormat(outputDetails.sharpFormat)
+    .toBuffer();
+
+  return {
+    buffer: outputBuffer,
+    filename: `rotated-${Date.now()}.${outputDetails.extension}`,
+    contentType: outputDetails.contentType,
+    metadata: {
+      originalName: file.originalname,
+      sourceType: "image",
       rotationDegrees: selectedRotation,
-      outputPages: sourcePdf.getPageCount(),
     },
   };
 }
