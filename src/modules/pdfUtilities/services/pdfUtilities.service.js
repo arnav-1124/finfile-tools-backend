@@ -1,4 +1,10 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import JSZip from "jszip";
 import { degrees, PDFDocument } from "pdf-lib";
+import pdfPoppler from "pdf-poppler";
 import sharp from "sharp";
 
 import {
@@ -542,4 +548,123 @@ export async function convertImagesToPdf({ files = [], rotations }) {
       outputPages: outputPdf.getPageCount(),
     },
   };
+}
+
+export async function convertPdfToImages({ file, imageFormat = "png" }) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for PDF to Images.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.pdfToImagesMaxBytes,
+    "PDF to Images file",
+  );
+
+  const selectedFormat = String(imageFormat || "png").toLowerCase();
+
+  if (!["png", "jpeg", "jpg"].includes(selectedFormat)) {
+    const error = new Error("Image format must be png, jpg, or jpeg.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedFormat = selectedFormat === "jpg" ? "jpeg" : selectedFormat;
+
+  const sourcePdf = await PDFDocument.load(file.buffer);
+  const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.pdfToImagesMaxPages) {
+    const error = new Error(
+      `PDF to Images supports up to ${PDF_UTILITY_LIMITS.pdfToImagesMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tempRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "finfile-pdf-images-"),
+  );
+
+  const inputPath = path.join(tempRoot, "input.pdf");
+
+  try {
+    await fs.writeFile(inputPath, file.buffer);
+
+    const options = {
+      format: normalizedFormat === "jpeg" ? "jpeg" : "png",
+      out_dir: tempRoot,
+      out_prefix: "page",
+      page: null,
+      scale: 1600,
+    };
+
+    await pdfPoppler.convert(inputPath, options);
+
+    const tempFiles = await fs.readdir(tempRoot);
+
+    const imageFiles = tempFiles
+      .filter((item) => {
+        const lower = item.toLowerCase();
+
+        return (
+          lower.endsWith(".png") ||
+          lower.endsWith(".jpg") ||
+          lower.endsWith(".jpeg")
+        );
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    if (!imageFiles.length) {
+      const error = new Error(
+        "PDF to Images did not generate any image files.",
+      );
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const zip = new JSZip();
+
+    for (const imageFile of imageFiles) {
+      const imagePath = path.join(tempRoot, imageFile);
+      const imageBuffer = await fs.readFile(imagePath);
+
+      const cleanName = imageFile
+        .replace(/^page-?/, "page-")
+        .replace(/\s+/g, "-");
+
+      zip.file(cleanName, imageBuffer);
+    }
+
+    const zipBuffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: {
+        level: 6,
+      },
+    });
+
+    return {
+      buffer: zipBuffer,
+      filename: `pdf-images-${Date.now()}.zip`,
+      contentType: "application/zip",
+      metadata: {
+        originalName: file.originalname,
+        sourceType: "pdf",
+        outputFormat: normalizedFormat,
+        totalPages,
+        outputImages: imageFiles.length,
+      },
+    };
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
 }

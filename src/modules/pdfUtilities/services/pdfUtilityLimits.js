@@ -13,6 +13,9 @@ export const PDF_UTILITY_LIMITS = {
   imagesToPdfMaxFiles: 50,
   imagesToPdfSingleImageMaxBytes: 15 * 1024 * 1024,
   imagesToPdfTotalMaxBytes: 100 * 1024 * 1024,
+
+  pdfToImagesMaxBytes: 50 * 1024 * 1024,
+  pdfToImagesMaxPages: 100,
 };
 
 export function formatLimitMb(bytes) {

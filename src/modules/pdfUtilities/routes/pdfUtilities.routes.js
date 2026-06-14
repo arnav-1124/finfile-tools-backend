@@ -5,6 +5,7 @@ import { uploadMemory } from "../../../shared/middleware/uploadMemory.middleware
 import {
   imagesToPdfController,
   mergePdfController,
+  pdfToImagesController,
   rotatePdfController,
   splitPdfController,
 } from "../controllers/pdfUtilities.controller.js";
@@ -18,6 +19,11 @@ router.post(
   "/images-to-pdf",
   uploadMemory.array("files", 30),
   imagesToPdfController,
+);
+router.post(
+  "/pdf-to-images",
+  uploadMemory.single("file"),
+  pdfToImagesController,
 );
 
 export default router;
