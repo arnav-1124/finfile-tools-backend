@@ -1,4 +1,5 @@
 import {
+  convertImagesToPdf,
   mergePdfFiles,
   rotateDocumentFile,
   splitPdfByPageRange,
@@ -49,6 +50,29 @@ export async function rotatePdfController(req, res, next) {
       file: req.file,
       rotationDegrees: req.body?.rotationDegrees,
       pageRanges: req.body?.pageRanges,
+      rotations: req.body?.rotations,
+    });
+
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${result.filename}"`,
+    );
+    res.setHeader(
+      "X-Document-Utility-Metadata",
+      JSON.stringify(result.metadata),
+    );
+
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function imagesToPdfController(req, res, next) {
+  try {
+    const result = await convertImagesToPdf({
+      files: req.files || [],
       rotations: req.body?.rotations,
     });
 

@@ -378,3 +378,80 @@ async function rotateImageDocument({ file, rotationDegrees }) {
     },
   };
 }
+
+export async function convertImagesToPdf({ files = [], rotations }) {
+  if (!files.length) {
+    const error = new Error("At least one image file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parsedRotations = parseJsonField(rotations, []);
+
+  for (const file of files) {
+    if (!ROTATABLE_IMAGE_MIME_TYPES.has(file.mimetype)) {
+      const error = new Error(
+        "Only PNG, JPG, JPEG, and WebP images are supported.",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  const outputPdf = await PDFDocument.create();
+
+  const inputFiles = [];
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+
+    const rotationItem = parsedRotations.find(
+      (item) => Number(item.index) === index,
+    );
+
+    const rotationDegrees = rotationItem
+      ? normalizeRotationDegrees(rotationItem.degrees)
+      : 0;
+
+    let imageBuffer = file.buffer;
+
+    if (rotationDegrees !== 0) {
+      imageBuffer = await sharp(file.buffer).rotate(rotationDegrees).toBuffer();
+    }
+
+    const normalizedImage = await sharp(imageBuffer)
+      .flatten({ background: "#ffffff" })
+      .png()
+      .toBuffer();
+
+    const image = await outputPdf.embedPng(normalizedImage);
+
+    const page = outputPdf.addPage([image.width, image.height]);
+
+    page.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: image.width,
+      height: image.height,
+    });
+
+    inputFiles.push({
+      originalName: file.originalname,
+      rotationDegrees,
+      pageNumber: index + 1,
+    });
+  }
+
+  const outputBytes = await outputPdf.save();
+
+  return {
+    buffer: Buffer.from(outputBytes),
+    filename: `images-to-pdf-${Date.now()}.pdf`,
+    contentType: "application/pdf",
+    metadata: {
+      sourceType: "images",
+      inputFiles,
+      outputPages: outputPdf.getPageCount(),
+    },
+  };
+}
