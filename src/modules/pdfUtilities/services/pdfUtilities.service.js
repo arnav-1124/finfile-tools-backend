@@ -1,7 +1,11 @@
 import { degrees, PDFDocument } from "pdf-lib";
 import sharp from "sharp";
 
-const MAX_MERGE_SIZE_BYTES = 15 * 1024 * 1024;
+import {
+  formatLimitMb,
+  getTotalFileSize,
+  PDF_UTILITY_LIMITS,
+} from "./pdfUtilityLimits.js";
 
 const ALLOWED_ROTATIONS = new Set([-90, 90, 180, 270]);
 
@@ -15,6 +19,28 @@ const WORD_MIME_TYPES = new Set([
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
+
+function validateFileSize(file, maxBytes, label) {
+  if (file.size > maxBytes) {
+    const error = new Error(
+      `${label} exceeds the ${formatLimitMb(maxBytes)} MB limit.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function validateTotalSize(files, maxBytes, label) {
+  const totalSize = getTotalFileSize(files);
+
+  if (totalSize > maxBytes) {
+    const error = new Error(
+      `${label} exceeds the ${formatLimitMb(maxBytes)} MB total limit.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+}
 
 function normalizeRotationDegrees(rotationDegrees) {
   const selectedRotation = Number(rotationDegrees);
@@ -108,10 +134,6 @@ function getImageOutputDetails(file) {
   };
 }
 
-function getTotalFileSize(files) {
-  return files.reduce((total, file) => total + file.size, 0);
-}
-
 function parsePageRanges(pageRanges, totalPages) {
   if (!pageRanges || typeof pageRanges !== "string") {
     const error = new Error("Page ranges are required. Example: 1-3,5,8");
@@ -182,8 +204,22 @@ export async function splitPdfByPageRange({ file, pageRanges }) {
     throw error;
   }
 
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.singlePdfMaxBytes,
+    "Split PDF file",
+  );
+
   const sourcePdf = await PDFDocument.load(file.buffer);
   const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.splitMaxPages) {
+    const error = new Error(
+      `Split PDF supports up to ${PDF_UTILITY_LIMITS.splitMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
 
   const selectedPages = parsePageRanges(pageRanges, totalPages);
 
@@ -224,21 +260,33 @@ export async function mergePdfFiles({ files = [] }) {
     throw error;
   }
 
+  if (files.length > PDF_UTILITY_LIMITS.mergeMaxFiles) {
+    const error = new Error(
+      `Merge PDF supports up to ${PDF_UTILITY_LIMITS.mergeMaxFiles} files.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
   for (const file of files) {
     if (file.mimetype !== "application/pdf") {
       const error = new Error("Only PDF files are supported for merge PDF.");
       error.statusCode = 400;
       throw error;
     }
+
+    validateFileSize(
+      file,
+      PDF_UTILITY_LIMITS.mergeSinglePdfMaxBytes,
+      "One of the merge PDF files",
+    );
   }
 
-  const totalSize = getTotalFileSize(files);
-
-  if (totalSize > MAX_MERGE_SIZE_BYTES) {
-    const error = new Error("Merge PDF limit is 15 MB.");
-    error.statusCode = 400;
-    throw error;
-  }
+  validateTotalSize(
+    files,
+    PDF_UTILITY_LIMITS.mergeTotalMaxBytes,
+    "Merge PDF files",
+  );
 
   const outputPdf = await PDFDocument.create();
 
@@ -288,6 +336,12 @@ export async function rotateDocumentFile({
   }
 
   if (file.mimetype === "application/pdf") {
+    validateFileSize(
+      file,
+      PDF_UTILITY_LIMITS.rotatePdfMaxBytes,
+      "Rotate PDF file",
+    );
+
     return rotatePdfDocument({
       file,
       rotationDegrees,
@@ -297,6 +351,12 @@ export async function rotateDocumentFile({
   }
 
   if (ROTATABLE_IMAGE_MIME_TYPES.has(file.mimetype)) {
+    validateFileSize(
+      file,
+      PDF_UTILITY_LIMITS.rotateImageMaxBytes,
+      "Rotate image file",
+    );
+
     return rotateImageDocument({
       file,
       rotationDegrees,
@@ -326,6 +386,14 @@ async function rotatePdfDocument({
 }) {
   const sourcePdf = await PDFDocument.load(file.buffer);
   const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.rotatePdfMaxPages) {
+    const error = new Error(
+      `Rotate PDF supports up to ${PDF_UTILITY_LIMITS.rotatePdfMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
 
   const instructions = buildPdfRotationInstructions({
     rotations,
@@ -388,6 +456,14 @@ export async function convertImagesToPdf({ files = [], rotations }) {
 
   const parsedRotations = parseJsonField(rotations, []);
 
+  if (files.length > PDF_UTILITY_LIMITS.imagesToPdfMaxFiles) {
+    const error = new Error(
+      `Images to PDF supports up to ${PDF_UTILITY_LIMITS.imagesToPdfMaxFiles} images.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
   for (const file of files) {
     if (!ROTATABLE_IMAGE_MIME_TYPES.has(file.mimetype)) {
       const error = new Error(
@@ -396,7 +472,19 @@ export async function convertImagesToPdf({ files = [], rotations }) {
       error.statusCode = 400;
       throw error;
     }
+
+    validateFileSize(
+      file,
+      PDF_UTILITY_LIMITS.imagesToPdfSingleImageMaxBytes,
+      "One of the image files",
+    );
   }
+
+  validateTotalSize(
+    files,
+    PDF_UTILITY_LIMITS.imagesToPdfTotalMaxBytes,
+    "Images to PDF files",
+  );
 
   const outputPdf = await PDFDocument.create();
 
