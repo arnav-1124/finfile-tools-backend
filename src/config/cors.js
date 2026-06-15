@@ -1,6 +1,6 @@
 import cors from "cors";
 
-const allowedOrigins = ["http://localhost:5173", "http://localhost:3000"];
+const allowedOrigins = ["http://localhost:5173", "http://localhost:3000", "https://finfile-tools-frontend.vercel.app"];
 
 const corsOptions = {
   origin(origin, callback) {
