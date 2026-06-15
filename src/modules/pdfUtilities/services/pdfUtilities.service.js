@@ -247,6 +247,76 @@ export async function splitPdfByPageRange({ file, pageRanges }) {
   };
 }
 
+export async function removePdfPages({ file, pageRanges }) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for Remove Pages.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.singlePdfMaxBytes,
+    "Remove Pages PDF file",
+  );
+
+  const sourcePdf = await PDFDocument.load(file.buffer);
+  const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.splitMaxPages) {
+    const error = new Error(
+      `Remove Pages supports up to ${PDF_UTILITY_LIMITS.splitMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const pagesToRemove = parsePageRanges(pageRanges, totalPages);
+  const pagesToRemoveSet = new Set(pagesToRemove);
+
+  if (pagesToRemoveSet.size >= totalPages) {
+    const error = new Error("You cannot remove all pages from a PDF.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const pagesToKeep = Array.from(
+    { length: totalPages },
+    (_, index) => index + 1,
+  ).filter((pageNumber) => !pagesToRemoveSet.has(pageNumber));
+
+  const outputPdf = await PDFDocument.create();
+
+  const copiedPages = await outputPdf.copyPages(
+    sourcePdf,
+    pagesToKeep.map((page) => page - 1),
+  );
+
+  for (const copiedPage of copiedPages) {
+    outputPdf.addPage(copiedPage);
+  }
+
+  const outputBytes = await outputPdf.save();
+
+  return {
+    buffer: Buffer.from(outputBytes),
+    filename: `removed-pages-${Date.now()}.pdf`,
+    contentType: "application/pdf",
+    metadata: {
+      originalName: file.originalname,
+      totalPages,
+      removedPages: pagesToRemove,
+      outputPages: copiedPages.length,
+    },
+  };
+}
+
 export async function mergePdfFiles({ files = [] }) {
   if (!files.length) {
     const error = new Error("At least two PDF files are required.");

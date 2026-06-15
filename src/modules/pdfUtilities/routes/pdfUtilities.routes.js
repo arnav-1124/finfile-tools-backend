@@ -6,6 +6,7 @@ import {
   imagesToPdfController,
   mergePdfController,
   pdfToImagesController,
+  removePdfPagesController,
   rotatePdfController,
   splitPdfController,
 } from "../controllers/pdfUtilities.controller.js";
@@ -24,6 +25,11 @@ router.post(
   "/pdf-to-images",
   uploadMemory.single("file"),
   pdfToImagesController,
+);
+router.post(
+  "/remove-pages",
+  uploadMemory.single("file"),
+  removePdfPagesController,
 );
 
 export default router;
