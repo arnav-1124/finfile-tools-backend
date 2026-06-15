@@ -544,10 +544,87 @@ export async function convertImagesToPdf({ files = [], rotations }) {
   };
 }
 
-export async function convertPdfToImages() {
-  const error = new Error(
-    "PDF to Images is being moved to the document engine for production compatibility.",
+async function callDocumentEngineForUtility(payload) {
+  const documentEngineUrl = process.env.DOCUMENT_ENGINE_URL;
+
+  if (!documentEngineUrl) {
+    const error = new Error("Document engine URL is not configured.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const response = await fetch(`${documentEngineUrl}/extract`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data) {
+    const error = new Error(
+      data?.message || `Document engine failed with status ${response.status}`,
+    );
+    error.statusCode = response.status || 500;
+    throw error;
+  }
+
+  if (!data.success) {
+    const error = new Error(data.message || "Document engine utility failed.");
+    error.statusCode = 422;
+    error.engineError = data;
+    throw error;
+  }
+
+  return data;
+}
+
+export async function convertPdfToImages({ file, imageFormat = "png" }) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for PDF to Images.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.pdfToImagesMaxBytes,
+    "PDF to Images file",
   );
-  error.statusCode = 501;
-  throw error;
+
+  const engineResult = await callDocumentEngineForUtility({
+    tool: "pdf-to-images",
+    imageFormat,
+    files: [
+      {
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        contentBase64: file.buffer.toString("base64"),
+      },
+    ],
+  });
+
+  if (!engineResult.contentBase64) {
+    const error = new Error(
+      "Document engine did not return a downloadable file.",
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return {
+    buffer: Buffer.from(engineResult.contentBase64, "base64"),
+    filename: engineResult.filename || `pdf-images-${Date.now()}.zip`,
+    contentType: engineResult.contentType || "application/zip",
+    metadata: engineResult.metadata || {},
+  };
 }
