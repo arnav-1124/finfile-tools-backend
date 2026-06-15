@@ -698,3 +698,208 @@ export async function convertPdfToImages({ file, imageFormat = "png" }) {
     metadata: engineResult.metadata || {},
   };
 }
+
+function toRomanNumber(number) {
+  const romanMap = [
+    [1000, "m"],
+    [900, "cm"],
+    [500, "d"],
+    [400, "cd"],
+    [100, "c"],
+    [90, "xc"],
+    [50, "l"],
+    [40, "xl"],
+    [10, "x"],
+    [9, "ix"],
+    [5, "v"],
+    [4, "iv"],
+    [1, "i"],
+  ];
+
+  let value = number;
+  let result = "";
+
+  for (const [arabic, roman] of romanMap) {
+    while (value >= arabic) {
+      result += roman;
+      value -= arabic;
+    }
+  }
+
+  return result;
+}
+
+function toAlphabetNumber(number) {
+  let value = number;
+  let result = "";
+
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+
+  return result;
+}
+
+function formatPageNumber({ style, pageNumber, totalPages }) {
+  if (style === "page-x") {
+    return `Page ${pageNumber}`;
+  }
+
+  if (style === "page-x-of-y") {
+    return `Page ${pageNumber} of ${totalPages}`;
+  }
+
+  if (style === "leading-zero") {
+    return String(pageNumber).padStart(2, "0");
+  }
+
+  if (style === "alphabet") {
+    return toAlphabetNumber(pageNumber);
+  }
+
+  if (style === "roman") {
+    return toRomanNumber(pageNumber);
+  }
+
+  return String(pageNumber);
+}
+
+function getPageNumberPosition({
+  position,
+  pageWidth,
+  pageHeight,
+  textWidth,
+  fontSize,
+  margin,
+}) {
+  const normalizedPosition = position || "bottom-center";
+
+  const xPositions = {
+    left: margin,
+    center: (pageWidth - textWidth) / 2,
+    right: pageWidth - textWidth - margin,
+  };
+
+  const yPositions = {
+    top: pageHeight - margin - fontSize,
+    bottom: margin,
+  };
+
+  const [vertical, horizontal] = normalizedPosition.split("-");
+
+  return {
+    x: xPositions[horizontal] ?? xPositions.center,
+    y: yPositions[vertical] ?? yPositions.bottom,
+  };
+}
+
+export async function addPdfPageNumbers({
+  file,
+  numberingStyle = "number",
+  position = "bottom-center",
+  fontSize = 12,
+  margin = 28,
+  startNumber = 1,
+  pageRanges,
+  skipFirstPage,
+}) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for page numbers.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.singlePdfMaxBytes,
+    "Page Numbers PDF file",
+  );
+
+  const sourcePdf = await PDFDocument.load(file.buffer);
+  const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.splitMaxPages) {
+    const error = new Error(
+      `Page Numbers supports up to ${PDF_UTILITY_LIMITS.splitMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const selectedFontSize = Math.min(Math.max(Number(fontSize) || 12, 8), 48);
+  const selectedMargin = Math.min(Math.max(Number(margin) || 28, 8), 120);
+  const selectedStartNumber = Math.max(Number(startNumber) || 1, 1);
+
+  let pagesToNumber = pageRanges
+    ? parsePageRanges(pageRanges, totalPages)
+    : Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  if (skipFirstPage === "true" || skipFirstPage === true) {
+    pagesToNumber = pagesToNumber.filter((pageNumber) => pageNumber !== 1);
+  }
+
+  const pagesToNumberSet = new Set(pagesToNumber);
+  const pages = sourcePdf.getPages();
+
+  let visibleNumberIndex = selectedStartNumber;
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const pageNumber = index + 1;
+
+    if (!pagesToNumberSet.has(pageNumber)) continue;
+
+    const page = pages[index];
+    const { width, height } = page.getSize();
+
+    const label = formatPageNumber({
+      style: numberingStyle,
+      pageNumber: visibleNumberIndex,
+      totalPages,
+    });
+
+    const approxTextWidth = label.length * selectedFontSize * 0.55;
+
+    const { x, y } = getPageNumberPosition({
+      position,
+      pageWidth: width,
+      pageHeight: height,
+      textWidth: approxTextWidth,
+      fontSize: selectedFontSize,
+      margin: selectedMargin,
+    });
+
+    page.drawText(label, {
+      x,
+      y,
+      size: selectedFontSize,
+    });
+
+    visibleNumberIndex += 1;
+  }
+
+  const outputBytes = await sourcePdf.save();
+
+  return {
+    buffer: Buffer.from(outputBytes),
+    filename: `page-numbers-${Date.now()}.pdf`,
+    contentType: "application/pdf",
+    metadata: {
+      originalName: file.originalname,
+      totalPages,
+      numberedPages: pagesToNumber,
+      numberingStyle,
+      position,
+      fontSize: selectedFontSize,
+      margin: selectedMargin,
+      startNumber: selectedStartNumber,
+    },
+  };
+}

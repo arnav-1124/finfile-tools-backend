@@ -3,6 +3,7 @@ import express from "express";
 import { uploadMemory } from "../../../shared/middleware/uploadMemory.middleware.js";
 
 import {
+  addPdfPageNumbersController,
   imagesToPdfController,
   mergePdfController,
   pdfToImagesController,
@@ -30,6 +31,11 @@ router.post(
   "/remove-pages",
   uploadMemory.single("file"),
   removePdfPagesController,
+);
+router.post(
+  "/page-numbers",
+  uploadMemory.single("file"),
+  addPdfPageNumbersController,
 );
 
 export default router;

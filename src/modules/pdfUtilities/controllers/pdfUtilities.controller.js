@@ -1,4 +1,5 @@
 import {
+  addPdfPageNumbers,
   convertImagesToPdf,
   convertPdfToImages,
   mergePdfFiles,
@@ -122,6 +123,35 @@ export async function pdfToImagesController(req, res, next) {
     const result = await convertPdfToImages({
       file: req.file,
       imageFormat: req.body?.imageFormat,
+    });
+
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${result.filename}"`,
+    );
+    res.setHeader(
+      "X-Document-Utility-Metadata",
+      JSON.stringify(result.metadata),
+    );
+
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function addPdfPageNumbersController(req, res, next) {
+  try {
+    const result = await addPdfPageNumbers({
+      file: req.file,
+      numberingStyle: req.body?.numberingStyle,
+      position: req.body?.position,
+      fontSize: req.body?.fontSize,
+      margin: req.body?.margin,
+      startNumber: req.body?.startNumber,
+      pageRanges: req.body?.pageRanges,
+      skipFirstPage: req.body?.skipFirstPage,
     });
 
     res.setHeader("Content-Type", result.contentType);
