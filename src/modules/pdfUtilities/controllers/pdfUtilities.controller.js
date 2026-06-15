@@ -1,5 +1,6 @@
 import {
   addPdfPageNumbers,
+  addPdfWatermark,
   convertImagesToPdf,
   convertPdfToImages,
   extractPdfPages,
@@ -176,6 +177,35 @@ export async function addPdfPageNumbersController(req, res, next) {
       startNumber: req.body?.startNumber,
       pageRanges: req.body?.pageRanges,
       skipFirstPage: req.body?.skipFirstPage,
+    });
+
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${result.filename}"`,
+    );
+    res.setHeader(
+      "X-Document-Utility-Metadata",
+      JSON.stringify(result.metadata),
+    );
+
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function addPdfWatermarkController(req, res, next) {
+  try {
+    const result = await addPdfWatermark({
+      file: req.file,
+      watermarkText: req.body?.watermarkText,
+      position: req.body?.position,
+      fontSize: req.body?.fontSize,
+      opacity: req.body?.opacity,
+      rotationDegrees: req.body?.rotationDegrees,
+      margin: req.body?.margin,
+      pageRanges: req.body?.pageRanges,
     });
 
     res.setHeader("Content-Type", result.contentType);

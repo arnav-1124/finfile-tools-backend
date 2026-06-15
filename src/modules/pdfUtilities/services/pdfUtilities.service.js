@@ -961,3 +961,162 @@ export async function addPdfPageNumbers({
     },
   };
 }
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) return fallback;
+
+  return Math.min(Math.max(number, min), max);
+}
+
+function getWatermarkPosition({
+  position,
+  pageWidth,
+  pageHeight,
+  textWidth,
+  fontSize,
+  margin,
+}) {
+  const normalizedPosition = position || "center";
+
+  const positions = {
+    center: {
+      x: (pageWidth - textWidth) / 2,
+      y: (pageHeight - fontSize) / 2,
+    },
+    "top-left": {
+      x: margin,
+      y: pageHeight - margin - fontSize,
+    },
+    "top-center": {
+      x: (pageWidth - textWidth) / 2,
+      y: pageHeight - margin - fontSize,
+    },
+    "top-right": {
+      x: pageWidth - textWidth - margin,
+      y: pageHeight - margin - fontSize,
+    },
+    "bottom-left": {
+      x: margin,
+      y: margin,
+    },
+    "bottom-center": {
+      x: (pageWidth - textWidth) / 2,
+      y: margin,
+    },
+    "bottom-right": {
+      x: pageWidth - textWidth - margin,
+      y: margin,
+    },
+  };
+
+  return positions[normalizedPosition] || positions.center;
+}
+
+export async function addPdfWatermark({
+  file,
+  watermarkText,
+  position = "center",
+  fontSize = 42,
+  opacity = 0.18,
+  rotationDegrees = -35,
+  margin = 36,
+  pageRanges,
+}) {
+  if (!file) {
+    const error = new Error("PDF file is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (file.mimetype !== "application/pdf") {
+    const error = new Error("Only PDF files are supported for watermarking.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cleanWatermarkText = String(watermarkText || "").trim();
+
+  if (!cleanWatermarkText) {
+    const error = new Error("Watermark text is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  validateFileSize(
+    file,
+    PDF_UTILITY_LIMITS.singlePdfMaxBytes,
+    "Watermark PDF file",
+  );
+
+  const sourcePdf = await PDFDocument.load(file.buffer);
+  const totalPages = sourcePdf.getPageCount();
+
+  if (totalPages > PDF_UTILITY_LIMITS.splitMaxPages) {
+    const error = new Error(
+      `Watermark supports up to ${PDF_UTILITY_LIMITS.splitMaxPages} pages for now.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const selectedFontSize = clampNumber(fontSize, 8, 96, 42);
+  const selectedOpacity = clampNumber(opacity, 0.05, 1, 0.18);
+  const selectedRotation = clampNumber(rotationDegrees, -180, 180, -35);
+  const selectedMargin = clampNumber(margin, 8, 160, 36);
+
+  const pagesToWatermark = pageRanges
+    ? parsePageRanges(pageRanges, totalPages)
+    : Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const pagesToWatermarkSet = new Set(pagesToWatermark);
+  const pages = sourcePdf.getPages();
+
+  for (let index = 0; index < pages.length; index += 1) {
+    const pageNumber = index + 1;
+
+    if (!pagesToWatermarkSet.has(pageNumber)) continue;
+
+    const page = pages[index];
+    const { width, height } = page.getSize();
+
+    const approxTextWidth = cleanWatermarkText.length * selectedFontSize * 0.55;
+
+    const { x, y } = getWatermarkPosition({
+      position,
+      pageWidth: width,
+      pageHeight: height,
+      textWidth: approxTextWidth,
+      fontSize: selectedFontSize,
+      margin: selectedMargin,
+    });
+
+    page.drawText(cleanWatermarkText, {
+      x,
+      y,
+      size: selectedFontSize,
+      opacity: selectedOpacity,
+      rotate: degrees(selectedRotation),
+    });
+  }
+
+  const outputBytes = await sourcePdf.save();
+
+  return {
+    buffer: Buffer.from(outputBytes),
+    filename: `watermarked-${Date.now()}.pdf`,
+    contentType: "application/pdf",
+    metadata: {
+      originalName: file.originalname,
+      totalPages,
+      watermarkedPages: pagesToWatermark,
+      watermarkText: cleanWatermarkText,
+      position,
+      fontSize: selectedFontSize,
+      opacity: selectedOpacity,
+      rotationDegrees: selectedRotation,
+      margin: selectedMargin,
+    },
+  };
+}
