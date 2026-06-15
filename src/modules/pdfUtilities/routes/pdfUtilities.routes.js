@@ -4,6 +4,7 @@ import { uploadMemory } from "../../../shared/middleware/uploadMemory.middleware
 
 import {
   addPdfPageNumbersController,
+  extractPdfPagesController,
   imagesToPdfController,
   mergePdfController,
   pdfToImagesController,
@@ -36,6 +37,11 @@ router.post(
   "/page-numbers",
   uploadMemory.single("file"),
   addPdfPageNumbersController,
+);
+router.post(
+  "/extract-pages",
+  uploadMemory.single("file"),
+  extractPdfPagesController,
 );
 
 export default router;
