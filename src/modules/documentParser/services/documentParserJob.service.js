@@ -29,47 +29,58 @@ export function runDocumentParserJob(job) {
         },
       });
 
-      const progressInterval = setInterval(() => {
-        const currentStages = [
-          {
-            percent: 18,
-            stage: "Analyzing",
-            message: "Checking document type and embedded text.",
-          },
-          {
-            percent: 32,
-            stage: "Rendering",
-            message: "Preparing document pages for OCR.",
-          },
-          {
-            percent: 48,
-            stage: "Scanning",
-            message: "Running OCR on document pages.",
-          },
-          {
-            percent: 64,
-            stage: "Extracting",
-            message: "Extracting readable text blocks.",
-          },
-          {
-            percent: 78,
-            stage: "Structuring",
-            message: "Organizing extracted output.",
-          },
-          {
-            percent: 88,
-            stage: "Finalizing",
-            message: "Finalizing parsed document result.",
-          },
-        ];
+      const estimatedStages = [
+        {
+          percent: 18,
+          stage: "Analyzing",
+          message: "Checking document type and embedded text.",
+        },
+        {
+          percent: 32,
+          stage: "Preparing pages",
+          message: "Preparing document pages for OCR.",
+        },
+        {
+          percent: 48,
+          stage: "Scanning",
+          message:
+            "Running OCR on document pages. Dense scanned pages can take longer.",
+        },
+        {
+          percent: 62,
+          stage: "Reading text",
+          message: "Extracting readable text blocks from the document.",
+        },
+        {
+          percent: 74,
+          stage: "Structuring",
+          message: "Organizing extracted text into usable output.",
+        },
+        {
+          percent: 86,
+          stage: "Finalizing",
+          message: "Finalizing parsed document result.",
+        },
+        {
+          percent: 94,
+          stage: "Almost done",
+          message: "Finishing OCR output. Please keep this tab open.",
+        },
+      ];
 
-        const randomStage =
-          currentStages[Math.floor(Math.random() * currentStages.length)];
+      let progressIndex = 0;
+
+      const progressInterval = setInterval(() => {
+        if (progressIndex >= estimatedStages.length) {
+          return;
+        }
 
         updateDocumentParserJob(job.jobId, {
-          progress: randomStage,
+          progress: estimatedStages[progressIndex],
         });
-      }, 12000);
+
+        progressIndex += 1;
+      }, 30000);
 
       const asyncTimeoutMs = Number(
         process.env.DOCUMENT_PARSER_ASYNC_TIMEOUT_MS || 900000,
