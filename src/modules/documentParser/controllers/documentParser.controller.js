@@ -5,6 +5,7 @@ export async function parseDocumentController(req, res, next) {
     const result = await parseDocumentFile({
       file: req.file,
       parserMode: req.body?.parserMode || "AUTO",
+      qualityMode: req.body?.qualityMode || "BALANCED",
     });
 
     res.json(result);
