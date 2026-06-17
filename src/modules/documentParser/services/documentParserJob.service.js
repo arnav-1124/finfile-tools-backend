@@ -71,7 +71,15 @@ export function runDocumentParserJob(job) {
         });
       }, 12000);
 
-      const result = await callDocumentEngineParser(buildPayloadFromJob(job));
+      const asyncTimeoutMs = Number(
+        process.env.DOCUMENT_PARSER_ASYNC_TIMEOUT_MS || 900000,
+      );
+
+      const result = await callDocumentEngineParser(buildPayloadFromJob(job), {
+        timeoutMs: asyncTimeoutMs,
+        timeoutMessage:
+          "This document is still taking longer than expected. Heavy scanned PDFs may need high-accuracy background processing.",
+      });
 
       clearInterval(progressInterval);
 
