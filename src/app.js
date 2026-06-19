@@ -3,10 +3,12 @@ import express from "express";
 import cors from "./config/cors.js";
 
 import healthRoutes from "./modules/health/health.routes.js";
+import warmupRoutes from "./modules/warmup/warmup.routes.js";
 import pdfImageToExcelRoutes from "./modules/pdfImageToExcel/routes/pdfImageToExcel.routes.js";
 import pdfUtilitiesRoutes from "./modules/pdfUtilities/routes/pdfUtilities.routes.js";
 
 import documentParserRoutes from "./modules/documentParser/routes/documentParser.routes.js";
+
 
 const app = express();
 
@@ -18,6 +20,7 @@ app.use("/api/health", healthRoutes);
 app.use("/api/v1/tools/pdf-image-to-excel", pdfImageToExcelRoutes);
 app.use("/api/v1/tools/pdf-utilities", pdfUtilitiesRoutes);
 app.use("/api/v1/document-parser", documentParserRoutes);
+app.use("/api/v1/warmup", warmupRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
