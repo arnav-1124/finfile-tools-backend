@@ -4,6 +4,7 @@ import { uploadMemory } from "../../../shared/middleware/uploadMemory.middleware
 import {
   createDocumentParserJobController,
   getDocumentParserJobController,
+  getDocumentParserJobResultController,
   parseDocumentController,
 } from "../controllers/documentParser.controller.js";
 
@@ -16,6 +17,8 @@ router.post(
   uploadMemory.single("file"),
   createDocumentParserJobController,
 );
+
+router.get("/jobs/:jobId/result", getDocumentParserJobResultController);
 
 router.get("/jobs/:jobId", getDocumentParserJobController);
 

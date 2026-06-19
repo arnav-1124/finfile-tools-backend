@@ -60,6 +60,36 @@ export function updateDocumentParserJob(jobId, patch) {
   return updatedJob;
 }
 
+function getResultSummary(result) {
+  if (!result) {
+    return null;
+  }
+
+  const tables = result.outputs?.tables || [];
+  const plainText = result.outputs?.plainText || "";
+  const markdown = result.outputs?.markdown || "";
+
+  return {
+    success: result.success,
+    jobId: result.jobId,
+    parserMode: result.parserMode,
+    selectedParser: result.selectedParser,
+    status: result.status,
+    document: result.document,
+    confidence: result.confidence,
+    warnings: result.warnings || [],
+    engine: result.engine,
+    performance: result.performance,
+    outputSummary: {
+      hasPlainText: Boolean(plainText),
+      hasMarkdown: Boolean(markdown),
+      tableCount: tables.length,
+      plainTextLength: plainText.length,
+      markdownLength: markdown.length,
+    },
+  };
+}
+
 export function toSafeDocumentParserJob(job) {
   if (!job) {
     return null;
@@ -76,9 +106,21 @@ export function toSafeDocumentParserJob(job) {
       mimeType: job.file?.mimeType,
       sizeBytes: job.file?.sizeBytes,
     },
-    result: job.result,
+    result: getResultSummary(job.result),
     error: job.error,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
   };
+}
+
+export function toDocumentParserJobResult(job) {
+  if (!job) {
+    return null;
+  }
+
+  if (!job.result) {
+    return null;
+  }
+
+  return job.result;
 }

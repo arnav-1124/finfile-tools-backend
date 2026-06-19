@@ -2,6 +2,7 @@ import { parseDocumentFile } from "../services/documentParser.service.js";
 import {
   createDocumentParserJob,
   getDocumentParserJob,
+  toDocumentParserJobResult,
   toSafeDocumentParserJob,
 } from "../services/documentParserJobStore.service.js";
 import { runDocumentParserJob } from "../services/documentParserJob.service.js";
@@ -59,6 +60,31 @@ export async function getDocumentParserJobController(req, res, next) {
     res.json({
       success: true,
       job: toSafeDocumentParserJob(job),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getDocumentParserJobResultController(req, res, next) {
+  try {
+    const job = getDocumentParserJob(req.params.jobId);
+
+    if (!job) {
+      const error = new Error("Document parsing job not found.");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (job.status !== "COMPLETED" || !job.result) {
+      const error = new Error("Document parsing result is not ready yet.");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      result: toDocumentParserJobResult(job),
     });
   } catch (error) {
     next(error);
